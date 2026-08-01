@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tarla İz Sayacı v2.1</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Inter:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #121517;
+    --surface: #1c2225;
+    --surface-2: #283135;
+    --amber: #ffb020;
+    --alert: #e53935;
+    --ok: #43a047;
+    --text: #f5f5f5;
+    --text-dim: #90a4ae;
+    --border: #37474f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+  html, body { margin: 0; padding: 0; height: 100%; width: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100dvh; width: 100vw; transition: background 0.3s; }
+  
+  /* Topbar */
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: max(12px, env(safe-area-inset-top)) 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .brand { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber); }
+  .gps-pill { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; padding: 6px 12px; border-radius: 20px; background: var(--bg); border: 1px solid var(--border); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-dim); }
+  .dot.searching { background: var(--amber); animation: pulse 1s infinite; }
+  .dot.live { background: var(--ok); }
+  .dot.off { background: var(--alert); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* Main Display */
+  .main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px 20px; position: relative; }
+  .label { font-size: 14px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: var(--text-dim); }
+  .counter { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: min(35vw, 180px); line-height: .85; color: var(--amber); display: flex; align-items: baseline; gap: 8px; }
+  .slash, .target { color: var(--text-dim); font-size: .45em; font-weight: 600; }
+  
+  /* Dynamic Track Visualizer */
+  .track-visualizer { display: flex; gap: 8px; margin: 16px 0 8px; justify-content: center; align-items: center; flex-wrap: wrap; max-width: 320px; }
+  .track-box { width: 38px; height: 48px; border-radius: 8px; background: var(--surface-2); border: 2px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Oswald'; font-size: 18px; font-weight: 700; color: var(--text-dim); transition: all .2s; }
+  .track-box.active { border-color: var(--amber); color: var(--amber); transform: scale(1.08); background: var(--surface); }
+  .track-box.mark-target { border-style: dashed; border-color: var(--alert); color: var(--alert); }
+  .track-box.mark-target.active { background: var(--alert); color: #fff; border-style: solid; }
+
+  .heading-info { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--text); font-size: 15px; font-weight: 700; background: var(--surface); padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); }
+  .compass { width: 20px; height: 20px; transition: transform .2s ease-out; fill: var(--amber); }
+  .debug-info { font-size: 11px; color: var(--text-dim); margin-top: 4px; font-weight: 800; text-align: center; }
+
+  /* Controls Area */
+  .controls { padding: 12px 16px max(16px, env(safe-area-inset-bottom)) 16px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); background: var(--surface); }
+  .target-row { display: flex; align-items: center; justify-content: space-between; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 8px 14px; }
+  .target-label { font-size: 13px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-dim); }
+  .stepper { display: flex; align-items: center; gap: 12px; }
+  .stepper button { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 22px; font-weight: 700; cursor: pointer; }
+  .stepper button:active { background: var(--border); }
+  .stepper .n { font-family: 'Oswald'; font-size: 26px; min-width: 30px; text-align: center; color: var(--amber); }
+
+  .row { display: flex; gap: 10px; }
+  .btn { flex: 1; border: none; border-radius: 14px; padding: 16px 10px; font-weight: 800; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--amber); color: #111; }
+  .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+
+  /* Alert Mode */
+  #app.alert { background: var(--alert); }
+  #app.alert .counter { color: #fff; }
+  .alert-banner { display: none; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; flex-direction: column; gap: 24px; background: rgba(229, 57, 53, 0.98); padding: 20px; text-align: center; }
+  #app.alert .alert-banner { display: flex; }
+  .alert-text { font-family: 'Oswald'; font-weight: 700; font-size: 20vw; line-height: 1; color: #fff; text-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+  .alert-sub { color: #fff; font-weight: 800; font-size: 18px; letter-spacing: .1em; text-transform: uppercase; }
+  .ack-btn { background: #fff; color: var(--alert); border: none; border-radius: 18px; padding: 22px 48px; font-size: 20px; font-weight: 800; box-shadow: 0 8px 24px rgba(0,0,0,0.3); cursor: pointer; }
+  .ack-btn:active { transform: scale(0.95); }
+
+  /* Permission Overlay */
+  .permission-screen { position: fixed; inset: 0; z-index: 200; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 32px; text-align: center; }
+  .permission-screen h1 { font-family: 'Oswald'; font-size: 28px; color: var(--amber); margin: 0; }
+  .permission-screen p { color: var(--text-dim); font-size: 15px; line-height: 1.6; max-width: 360px; margin: 0; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="topbar">
+    <div class="brand">🌾 İZ SAYACI v2.1</div>
+    <div class="gps-pill">
+      <div class="dot searching" id="gpsDot"></div>
+      <span id="gpsText">GPS Bekleniyor</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="label">Mevcut Sıra</div>
+    <div class="counter">
+      <span id="countNum">1</span>
+      <span class="slash">/</span>
+      <span class="target" id="targetNum">3</span>
+    </div>
+
+    <!-- Dinamik Sıra Görselleştirici -->
+    <div class="track-visualizer" id="trackVisualizer"></div>
+
+    <div class="heading-info">
+      <svg class="compass" id="compassIcon" viewBox="0 0 24 24"><path d="M12 2 L19 21 L12 17 L5 21 Z"/></svg>
+      <span id="headingText">---°</span>
+    </div>
+    
+    <div class="debug-info" id="debugText">Sistem hazır. Tarlada ilerlemeye başlayın.</div>
+  </div>
+
+  <!-- UYARI EKRANI -->
+  <div class="alert-banner">
+    <div class="alert-text">İZ AÇ!</div>
+    <div class="alert-sub">Mibzer Hidroliğini / İz Mekanizmasını Çekin</div>
+    <button class="ack-btn" id="ackBtn">İZ AÇTIM / TAMAM</button>
+  </div>
+
+  <div class="controls">
+    <div class="target-row">
+      <span class="target-label">İz Bırakma Aralığı</span>
+      <div class="stepper">
+        <button id="minus">–</button>
+        <span class="n" id="nDisplay">3</span>
+        <button id="plus">+</button>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" id="manualBtn">+1 Sıra / Manuel Dönüş</button>
+    </div>
+    <div class="row">
+      <button class="btn btn-secondary" id="soundBtn">🔊 Ses Açık</button>
+      <button class="btn btn-ghost" id="resetBtn">Sıfırla (1. Sıra)</button>
+    </div>
+  </div>
+</div>
+
+<div class="permission-screen" id="permScreen">
+  <h1>Ekim İz Takip Sistemi</h1>
+  <p>Sistemin dönüşleri otomatik algılaması için GPS ve Pusula erişimi gereklidir. Telefonu traktör kabininde cam önüne sabitleyiniz.</p>
+  <button class="btn btn-primary" id="startBtn" style="width: 100%; max-width: 280px; padding: 18px;">SİSTEMİ BAŞLAT</button>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  
+  // Elementler
+  const app = $('app'), countNum = $('countNum'), targetNum = $('targetNum'), 
+        nDisplay = $('nDisplay'), trackVisualizer = $('trackVisualizer'), 
+        gpsDot = $('gpsDot'), gpsText = $('gpsText'), headingText = $('headingText'), 
+        debugText = $('debugText'), compassIcon = $('compassIcon'), permScreen = $('permScreen');
+
+  // Konfigürasyon ve Durum Değişkenleri
+  let target = 3;             // Kaç parada bir iz bırakılacak
+  let currentPass = 1;        // Şu an kaçıncı sıradayız (1'den başlar)
+  let soundOn = true;
+  
+  // Filtreleme Parametreleri (Traktör & Tarla Koşulları)
+  const MIN_SPEED_KMH = 2.0;               // GPS yönü kabul etmek için min hız (km/s)
+  const U_TURN_ANGLE = 140;                // U dönüşü sayılabilmesi için gereken min net açı değişimi
+  const COOLDOWN_MS = 8000;                // İki dönüş tespiti arasındaki min bekleme süresi (Manevra emniyeti)
+  
+  let lastTurnTime = 0;
+  let referenceHeading = null;             // Düz gidilen yönün referansı
+  let headingHistory = [];                 // Açı geçmişi (Hareketli ortalama için)
+  let wakeLock = null;
+
+  // Açı Farkı Hesabı (0-360 derece geçişi korumalı)
+  function angleDiff(a, b) {
+    let d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+
+  // Açı Yumuşatma (Ağırlıklı Hareketli Ortalama)
+  function getSmoothedHeading(newAngle) {
+    headingHistory.push(newAngle);
+    if(headingHistory.length > 5) headingHistory.shift();
+    
+    let sinSum = 0, cosSum = 0;
+    for(let angle of headingHistory) {
+      let rad = angle * (Math.PI / 180);
+      sinSum += Math.sin(rad);
+      cosSum += Math.cos(rad);
+    }
+    let avgRad = Math.atan2(sinSum, cosSum);
+    let avgDeg = avgRad * (180 / Math.PI);
+    return (avgDeg + 360) % 360;
+  }
+
+  // Arayüzü Güncelleme
+  function render(){
+    countNum.textContent = currentPass;
+    targetNum.textContent = target;
+    nDisplay.textContent = target;
+    
+    trackVisualizer.innerHTML = '';
+    for(let i = 1; i <= target; i++){
+      const box = document.createElement('div');
+      const isTarget = (i === target);
+      box.className = 'track-box' + 
+                      (i === currentPass ? ' active' : '') + 
+                      (isTarget ? ' mark-target' : '');
+      box.textContent = i;
+      trackVisualizer.appendChild(box);
+    }
+  }
+
+  // Sesli / Siren Sistemi (Web Audio API)
+  let audioCtx = null, osc = null, alertInterval = null;
+  function startSiren(){
+    if(!soundOn || alertInterval) return;
+    try {
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      gain.gain.value = 0.3;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      
+      let freq = 600, dir = 1;
+      alertInterval = setInterval(() => {
+        freq += dir * 80;
+        if(freq >= 1200) dir = -1;
+        if(freq <= 500) dir = 1;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      }, 60);
+    } catch(e) {}
+  }
+
+  function stopSiren(){
+    if(alertInterval) clearInterval(alertInterval);
+    alertInterval = null;
+    if(osc) try { osc.stop(); } catch(e){}
+    osc = null;
+  }
+
+  // Uyarı Tetikleme
+  function triggerAlert(){
+    app.classList.add('alert');
+    startSiren();
+    if(navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 600]);
+  }
+
+  function clearAlert(){
+    app.classList.remove('alert');
+    stopSiren();
+  }
+
+  // Sıra Artırma (Dönüş Gerçekleştiğinde)
+  function registerTurn(sourceText){
+    const now = Date.now();
+    if(now - lastTurnTime < COOLDOWN_MS) return; // Çift tetikleme önleme
+    
+    lastTurnTime = now;
+    
+    // Sıra hesaplama
+    if(currentPass >= target) {
+      currentPass = 1;
+    } else {
+      currentPass++;
+    }
+    
+    render();
+    
+    if(navigator.vibrate) navigator.vibrate(250);
+
+    // Eğer iz bırakma sırasına geldiysek UYARI VER
+    if(currentPass === target) {
+      triggerAlert();
+    }
+    
+    debugText.textContent = `DÖNÜŞ TESPİT EDİLDİ (${sourceText}) ➔ Sıra: ${currentPass}`;
+  }
+
+  // Ana Yön İşleme Mantığı
+  function processHeading(rawHeading, speedKmh, source){
+    if(rawHeading === null || isNaN(rawHeading)) return;
+
+    const currentHeading = getSmoothedHeading(rawHeading);
+    compassIcon.style.transform = `rotate(${Math.round(currentHeading)}deg)`;
+    headingText.textContent = `${Math.round(currentHeading)}° (${source})`;
+
+    // İlk hareket başlatıldığında referans kilitle
+    if(referenceHeading === null) {
+      referenceHeading = currentHeading;
+      debugText.textContent = `Referans Yön Alındı: ${Math.round(referenceHeading)}°`;
+      return;
+    }
+
+    // Referanstan ne kadar saptık?
+    const diff = angleDiff(currentHeading, referenceHeading);
+
+    // Traktör sıranın sonuna gelip U dönüşünü tamamladığında
+    if(diff >= U_TURN_ANGLE) {
+      registerTurn(source);
+      // Yeni sıradaki gidiş yönü yeni referansımız olur
+      referenceHeading = currentHeading;
+      headingHistory = []; // Filtreyi temizle
+    } else if(diff < 30) {
+      // Düz hatta ilerlerken referans yönü hafifçe güncelle (Pusula kaymalarına karşı)
+      referenceHeading = (referenceHeading * 0.9) + (currentHeading * 0.1);
+      debugText.textContent = `Sırada İlerleniyor... | Ref: ${Math.round(referenceHeading)}°`;
+    }
+  }
+
+  // Sensor Eventleri
+  function handleOrientation(e){
+    // Düşük hızlarda veya dururken Manyetik Pusula kullan
+    let h = null;
+    if(e.webkitCompassHeading != null) h = e.webkitCompassHeading;
+    else if(e.alpha != null) h = (360 - e.alpha) % 360;
+    
+    // GPS hızı düşükse pusulayı devreye sok
+    if(lastGpsSpeed < MIN_SPEED_KMH) {
+      processHeading(h, lastGpsSpeed, 'Pusula');
+    }
+  }
+
+  let lastGpsSpeed = 0;
+  function handlePosition(p){
+    gpsDot.className = 'dot live';
+    const speedMs = p.coords.speed || 0;
+    lastGpsSpeed = speedMs * 3.6; // km/s
+    
+    gpsText.textContent = `${lastGpsSpeed.toFixed(1)} km/s`;
+
+    // Yeterli hız varsa en hassas yön GPS'ten alınır
+    if(lastGpsSpeed >= MIN_SPEED_KMH && p.coords.heading != null && !isNaN(p.coords.heading)) {
+      processHeading(p.coords.heading, lastGpsSpeed, 'GPS');
+    }
+  }
+
+  function handleGpsError(){
+    gpsDot.className = 'dot off';
+    gpsText.textContent = 'GPS Yok';
+  }
+
+  // Ekranı Açık Tutma (WakeLock)
+  async function requestWakeLock(){
+    try {
+      if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+    } catch(e) {}
+  }
+
+  // Başlatma Fonksiyonu
+  async function start(){
+    permScreen.style.display = 'none';
+    referenceHeading = null;
+    headingHistory = [];
+    
+    await requestWakeLock();
+
+    // Sensör İzinleri (iOS & Android)
+    if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      try {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if(res === 'granted') window.addEventListener('deviceorientation', handleOrientation, true);
+      } catch(e){}
+    } else {
+      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+      window.addEventListener('deviceorientation', handleOrientation, true);
+    }
+
+    if(navigator.geolocation) {
+      navigator.geolocation.watchPosition(handlePosition, handleGpsError, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000
+      });
+    }
+  }
+
+  // Sayfa Yeniden Odaklandığında
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+
+  // Buton Dinleyicileri
+  $('startBtn').addEventListener('click', start);
+  
+  $('manualBtn').addEventListener('click', () => {
+    registerTurn('Manuel');
+  });
+
+  $('ackBtn').addEventListener('click', () => {
+    clearAlert();
+  });
+
+  $('resetBtn').addEventListener('click', () => {
+    currentPass = 1;
+    referenceHeading = null;
+    headingHistory = [];
+    clearAlert();
+    render();
+    debugText.textContent = 'Sıfırlandı: 1. Sıradan başlanıyor.';
+  });
+
+  $('plus').addEventListener('click', () => {
+    target = Math.min(12, target + 1);
+    if(currentPass > target) currentPass = 1;
+    render();
+  });
+
+  $('minus').addEventListener('click', () => {
+    target = Math.max(1, target - 1);
+    if(currentPass > target) currentPass = 1;
+    render();
+  });
+
+  $('soundBtn').addEventListener('click', function(){
+    soundOn = !soundOn;
+    this.textContent = soundOn ? '🔊 Ses Açık' : '🔇 Ses Kapalı';
+    if(!soundOn) stopSiren();
+  });
+
+  // İlk Kurulum Rendersı
+  render();
+})();
+</script>
+</body>
+</html>
