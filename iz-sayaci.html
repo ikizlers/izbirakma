@@ -173,6 +173,9 @@
       </svg>
       <span id="headingText">Yön bekleniyor</span>
     </div>
+    <div class="heading-row" style="margin-top:4px; font-size:11px; opacity:.7;">
+      <span id="debugText">Durum: bekleniyor</span>
+    </div>
   </div>
 
   <div class="alert-banner">
@@ -215,6 +218,7 @@
   const gpsDot = document.getElementById('gpsDot');
   const gpsText = document.getElementById('gpsText');
   const headingText = document.getElementById('headingText');
+  const debugText = document.getElementById('debugText');
   const compassIcon = document.getElementById('compassIcon');
   const permScreen = document.getElementById('permScreen');
 
@@ -322,6 +326,7 @@
     if(refHeading === null){
       refHeading = heading;
       lastHeadingVal = heading;
+      debugText.textContent = 'Durum: referans alındı (' + Math.round(heading) + '°)';
       return;
     }
 
@@ -334,18 +339,27 @@
         turnStartTime = now;
         maxDeltaDuringTurn = deltaFromRef;
         settleStartTime = null;
+        debugText.textContent = 'Durum: DÖNÜŞ BAŞLADI (Δref ' + Math.round(deltaFromRef) + '°)';
       } else {
         refHeading = heading; // düz giderken küçük sapmaları referans olarak takip et
+        debugText.textContent = 'Durum: düz gidiyor (ref ' + Math.round(refHeading) + '°)';
       }
     } else {
       maxDeltaDuringTurn = Math.max(maxDeltaDuringTurn, deltaFromRef);
       if(deltaFromLast < SETTLE_RATE_DEG){
         if(settleStartTime === null) settleStartTime = now;
-        if(now - settleStartTime > SETTLE_MS){
+        const settledFor = now - settleStartTime;
+        debugText.textContent = 'Durum: sakinleşiyor (' + Math.round(settledFor/100)/10 + 's / 1.2s, maxΔ ' + Math.round(maxDeltaDuringTurn) + '°)';
+        if(settledFor > SETTLE_MS){
           const sinceLastTurn = now - lastTurnDetectedAt;
           if(maxDeltaDuringTurn > MIN_TURN_ANGLE && sinceLastTurn > MIN_TIME_BETWEEN_TURNS){
             lastTurnDetectedAt = now;
             registerPass();
+            debugText.textContent = 'Durum: GEÇİŞ SAYILDI ✓';
+          } else if(maxDeltaDuringTurn <= MIN_TURN_ANGLE){
+            debugText.textContent = 'Durum: dönüş çok küçüktü, sayılmadı (maxΔ ' + Math.round(maxDeltaDuringTurn) + '° < 80°)';
+          } else {
+            debugText.textContent = 'Durum: çok yakın zamanda dönüş sayıldı, atlandı';
           }
           turning = false;
           refHeading = heading;
@@ -353,6 +367,7 @@
         }
       } else {
         settleStartTime = null; // hâlâ dönüyor, sakinleşme sayacını sıfırla
+        debugText.textContent = 'Durum: hâlâ dönüyor (Δref ' + Math.round(deltaFromRef) + '°, Δson ' + Math.round(deltaFromLast) + '°)';
       }
     }
     lastHeadingVal = heading;
