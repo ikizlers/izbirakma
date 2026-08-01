@@ -294,12 +294,14 @@
       // Teorik olarak buraya düşmemeli (turning sadece eşik aşılınca true olur),
       // ileride eşikler değişirse diye güvenlik amaçlı bırakıldı.
       referenceHeading = settledHeading;
+       headingHistory = []; // 1. ekle
       return;
     }
 
     if (now - lastTurnTime < COOLDOWN_MS) {
       debugText.textContent = 'Dönüş algılandı ama soğuma süresinde — sayılmadı';
       referenceHeading = settledHeading; // yine de referansı güncelle, eski yöne kilitli kalmasın
+       headingHistory = []; // 1. ekle
       return;
     }
 
@@ -308,11 +310,13 @@
     if (source === 'Pusula' && (now - lastMovingTimestamp > MOVING_MEMORY_MS)) {
       debugText.textContent = 'Dönüş göz ardı edildi (araç yakın zamanda hareket etmemiş görünüyor)';
       referenceHeading = settledHeading;
+       headingHistory = []; // 1. ekle
       return;
     }
 
     lastTurnTime = now;
     referenceHeading = settledHeading; // yeni sıradaki yön artık referans
+    headingHistory = []; // 1. ekle
     registerTurn(source);
   }
 
