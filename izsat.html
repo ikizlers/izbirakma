@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>İz Sayacı</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14181a;
+    --surface:#1e2528;
+    --surface-2:#262f33;
+    --amber:#ffb020;
+    --amber-dim:#8a6011;
+    --alert:#e4432c;
+    --ok:#4caf6d;
+    --text:#f2f0ea;
+    --text-dim:#8c9599;
+    --border:#323b3f;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent; user-select:none;}
+  html,body{
+    margin:0; padding:0; height:100%; width:100%;
+    background:var(--bg); color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    overflow:hidden;
+    touch-action:manipulation;
+  }
+  #app{
+    display:flex; flex-direction:column; height:100dvh; width:100vw;
+    transition: background-color .25s ease;
+  }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: max(12px, env(safe-area-inset-top)) 16px 10px 16px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand{
+    font-family:'Oswald',sans-serif; font-weight:600; font-size:15px;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim);
+  }
+  .gps-pill{
+    display:flex; align-items:center; gap:6px;
+    font-size:12px; font-weight:600; letter-spacing:.05em;
+    padding:5px 10px; border-radius:20px; background:var(--surface);
+    border:1px solid var(--border);
+  }
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--text-dim);}
+  .dot.searching{background:var(--amber); animation:pulse 1s infinite;}
+  .dot.live{background:var(--ok);}
+  .dot.off{background:var(--alert);}
+  @keyframes pulse{0%,100%{opacity:1} 50%{opacity:.3}}
+
+  .main{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:6px; padding:10px 20px;
+  }
+  .label{
+    font-size:13px; font-weight:600; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--text-dim);
+  }
+  .counter{
+    font-family:'Oswald',sans-serif; font-weight:700;
+    font-size:min(42vw, 220px); line-height:0.9;
+    color:var(--amber);
+    letter-spacing:-.02em;
+    display:flex; align-items:baseline; gap:10px;
+  }
+  .counter .slash{color:var(--text-dim); font-size:.4em; font-weight:500;}
+  .counter .target{color:var(--text-dim); font-size:.4em; font-weight:500;}
+
+  .dots{
+    display:flex; gap:8px; margin-top:4px; flex-wrap:wrap; justify-content:center; max-width:280px;
+  }
+  .field-dot{
+    width:14px; height:14px; border-radius:50%; background:var(--surface-2);
+    border:1px solid var(--border);
+  }
+  .field-dot.filled{background:var(--amber); border-color:var(--amber);}
+
+  .heading-row{
+    display:flex; align-items:center; gap:8px; margin-top:14px;
+    color:var(--text-dim); font-size:13px; font-weight:600;
+  }
+  .compass{
+    width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+    transition: transform .3s ease;
+  }
+
+  .controls{
+    padding: 14px 16px max(14px, env(safe-area-inset-bottom)) 16px;
+    display:flex; flex-direction:column; gap:10px;
+    border-top:1px solid var(--border);
+  }
+  .row{display:flex; gap:10px;}
+  .btn{
+    flex:1; border:none; border-radius:14px; padding:16px 10px;
+    font-family:'Inter',sans-serif; font-weight:700; font-size:15px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    cursor:pointer; transition: transform .08s ease, opacity .15s ease;
+  }
+  .btn:active{transform:scale(0.96); opacity:.85;}
+  .btn-primary{background:var(--amber); color:#1a1400;}
+  .btn-secondary{background:var(--surface); color:var(--text); border:1px solid var(--border);}
+  .btn-ghost{background:transparent; color:var(--text-dim); border:1px solid var(--border);}
+
+  .target-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:10px 14px;
+  }
+  .target-label{font-size:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--text-dim);}
+  .stepper{display:flex; align-items:center; gap:14px;}
+  .stepper button{
+    width:38px; height:38px; border-radius:10px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text); font-size:20px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .stepper .n{font-family:'Oswald',sans-serif; font-size:24px; font-weight:700; min-width:28px; text-align:center;}
+
+  /* Alert / fullscreen state */
+  #app.alert{background:var(--alert);}
+  #app.alert .counter{color:#fff;}
+  #app.alert .label{color:rgba(255,255,255,.75);}
+  .alert-banner{
+    display:none; position:fixed; inset:0; z-index:5;
+    align-items:center; justify-content:center; flex-direction:column; gap:20px;
+    animation: flash 1s infinite;
+  }
+  #app.alert .alert-banner{display:flex;}
+  @keyframes flash{0%,100%{background-color:rgba(228,67,44,0)} 50%{background-color:rgba(255,255,255,.08)}}
+  .alert-text{
+    font-family:'Oswald',sans-serif; font-weight:700; font-size:15vw;
+    color:#fff; text-align:center; letter-spacing:.02em;
+  }
+  .alert-sub{color:rgba(255,255,255,.85); font-weight:600; font-size:15px; letter-spacing:.1em; text-transform:uppercase;}
+  .ack-btn{
+    background:#fff; color:var(--alert); border:none; border-radius:16px;
+    padding:18px 40px; font-size:17px; font-weight:700; font-family:'Inter',sans-serif;
+  }
+
+  .permission-screen{
+    position:fixed; inset:0; z-index:10; background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px; padding:32px; text-align:center;
+  }
+  .permission-screen h1{font-family:'Oswald',sans-serif; font-size:22px; margin:0;}
+  .permission-screen p{color:var(--text-dim); font-size:14px; line-height:1.5; max-width:320px; margin:0;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">İz Sayacı</div>
+    <div class="gps-pill">
+      <div class="dot searching" id="gpsDot"></div>
+      <span id="gpsText">Aranıyor</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="label">Geçiş</div>
+    <div class="counter">
+      <span id="countNum">0</span><span class="slash">/</span><span class="target" id="targetNum">3</span>
+    </div>
+    <div class="dots" id="dotsRow"></div>
+    <div class="heading-row">
+      <svg class="compass" id="compassIcon" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2 L15 12 L12 22 L9 12 Z" fill="currentColor"/>
+      </svg>
+      <span id="headingText">Yön bekleniyor</span>
+    </div>
+  </div>
+
+  <div class="alert-banner">
+    <div class="alert-text">İZ AÇ!</div>
+    <div class="alert-sub">Hidrolik kolu çekin</div>
+    <button class="ack-btn" id="ackBtn">Tamam, İz Açtım</button>
+  </div>
+
+  <div class="controls">
+    <div class="target-row">
+      <span class="target-label">Kaç geçişte bir</span>
+      <div class="stepper">
+        <button id="minus">–</button>
+        <span class="n" id="nDisplay">3</span>
+        <button id="plus">+</button>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn btn-secondary" id="manualBtn">+1 Geçiş (manuel)</button>
+      <button class="btn btn-ghost" id="soundBtn">🔊 Ses</button>
+    </div>
+    <button class="btn btn-ghost" id="resetBtn" style="flex:none;">Sayacı Sıfırla</button>
+  </div>
+
+</div>
+
+<div class="permission-screen" id="permScreen">
+  <h1>Konum İzni Gerekli</h1>
+  <p>Sistemin tarla ucundaki dönüşleri algılayabilmesi için GPS konum izni gerekiyor. Telefonunuzu traktör kabinine yerleştirip devam edin.</p>
+  <button class="btn btn-primary" id="startBtn" style="max-width:220px;">Başlat</button>
+</div>
+
+<script>
+(function(){
+  const app = document.getElementById('app');
+  const countNum = document.getElementById('countNum');
+  const targetNum = document.getElementById('targetNum');
+  const nDisplay = document.getElementById('nDisplay');
+  const dotsRow = document.getElementById('dotsRow');
+  const gpsDot = document.getElementById('gpsDot');
+  const gpsText = document.getElementById('gpsText');
+  const headingText = document.getElementById('headingText');
+  const compassIcon = document.getElementById('compassIcon');
+  const permScreen = document.getElementById('permScreen');
+
+  let target = 3;
+  let count = 0;
+  let watchId = null;
+  let soundOn = true;
+
+  // Turn detection state
+  let lastStableHeading = null;
+  let turnInProgress = false;
+  let turnStartTime = 0;
+  const TURN_THRESHOLD = 95;      // derece: yön değişimi bu kadar aşarsa dönüş başladı say
+  const STABLE_THRESHOLD = 35;    // derece: yön tekrar bu aralığa dönerse dönüş bitti say
+  const MIN_TURN_MS = 2500;       // dönüşün en az bu kadar sürmesi gerekiyor (gürültü filtresi)
+  const MIN_SPEED = 0.6;          // m/s, bunun altında yön verisi güvenilmez sayılır
+  const MIN_TIME_BETWEEN_TURNS = 8000; // iki dönüş arası minimum süre (aynı dönüşü iki kez saymasın)
+  let lastTurnDetectedAt = 0;
+
+  function angleDiff(a, b){
+    let d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+
+  function renderDots(){
+    dotsRow.innerHTML = '';
+    for(let i=0;i<target;i++){
+      const d = document.createElement('div');
+      d.className = 'field-dot' + (i < count % target || (count>0 && count % target === 0 && i < target) ? '' : '');
+      dotsRow.appendChild(d);
+    }
+    const filled = count % target === 0 && count > 0 ? target : count % target;
+    Array.from(dotsRow.children).forEach((el, i)=>{
+      if(i < filled) el.classList.add('filled');
+    });
+  }
+
+  function updateDisplay(){
+    countNum.textContent = count;
+    targetNum.textContent = target;
+    nDisplay.textContent = target;
+    renderDots();
+  }
+
+  function beep(){
+    if(!soundOn) return;
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0,220,440].forEach((delay)=>{
+        setTimeout(()=>{
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'square';
+          o.frequency.value = 880;
+          g.gain.value = 0.15;
+          o.connect(g); g.connect(ctx.destination);
+          o.start();
+          o.stop(ctx.currentTime + 0.18);
+        }, delay);
+      });
+    }catch(e){}
+  }
+
+  function triggerAlert(){
+    app.classList.add('alert');
+    beep();
+    if(navigator.vibrate) navigator.vibrate([200,100,200,100,200]);
+  }
+
+  function clearAlert(){
+    app.classList.remove('alert');
+  }
+
+  function registerPass(){
+    count += 1;
+    updateDisplay();
+    if(count % target === 0){
+      triggerAlert();
+    }
+  }
+
+  // Pusula (manyetometre) tabanlı yön - hıza bağımlı değil, dönüşlerde de çalışır
+  let compassHeading = null;
+  let compassAvailable = false;
+
+  function onOrientation(evt){
+    let h = null;
+    if(evt.webkitCompassHeading !== undefined && evt.webkitCompassHeading !== null){
+      h = evt.webkitCompassHeading; // iOS Safari - zaten 0-360, kuzeye göre
+    } else if(evt.alpha !== null && evt.absolute){
+      h = 360 - evt.alpha; // Android/standart - alpha ters yönde artar
+    }
+    if(h !== null && !isNaN(h)){
+      compassHeading = h;
+      compassAvailable = true;
+    }
+  }
+
+  function processHeading(heading, source){
+    headingText.textContent = Math.round(heading) + '° (' + source + ')';
+    compassIcon.style.transform = 'rotate(' + heading + 'deg)';
+
+    if(lastStableHeading === null){
+      lastStableHeading = heading;
+      return;
+    }
+
+    const diff = angleDiff(heading, lastStableHeading);
+    const now = Date.now();
+
+    if(!turnInProgress){
+      if(diff > TURN_THRESHOLD){
+        turnInProgress = true;
+        turnStartTime = now;
+      } else {
+        lastStableHeading = heading;
+      }
+    } else {
+      if(diff < STABLE_THRESHOLD){
+        const turnDuration = now - turnStartTime;
+        const sinceLastTurn = now - lastTurnDetectedAt;
+        if(turnDuration > MIN_TURN_MS && sinceLastTurn > MIN_TIME_BETWEEN_TURNS){
+          lastTurnDetectedAt = now;
+          registerPass();
+        }
+        turnInProgress = false;
+        lastStableHeading = heading;
+      }
+    }
+  }
+
+  function onPosition(pos){
+    gpsDot.className = 'dot live';
+    gpsText.textContent = 'Canlı';
+
+    // Pusula varsa öncelik ver (hızdan bağımsız, dönüşte de çalışır)
+    if(compassAvailable && compassHeading !== null){
+      processHeading(compassHeading, 'pusula');
+      return;
+    }
+
+    // Pusula yoksa GPS heading'e düş (sadece yeterli hızda güvenilir)
+    const heading = pos.coords.heading;
+    const speed = pos.coords.speed;
+
+    if(heading === null || speed === null || speed < MIN_SPEED){
+      headingText.textContent = speed !== null && speed < MIN_SPEED ? 'Hareket bekleniyor' : 'Yön bekleniyor';
+      return;
+    }
+
+    processHeading(heading, 'GPS');
+  }
+
+  function onError(err){
+    gpsDot.className = 'dot off';
+    gpsText.textContent = 'Konum yok';
+    headingText.textContent = 'GPS hatası: ' + (err.message || 'izin verilmedi');
+  }
+
+  function startTracking(){
+    if(!navigator.geolocation){
+      gpsText.textContent = 'Desteklenmiyor';
+      gpsDot.className = 'dot off';
+      return;
+    }
+    watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 8000
+    });
+  }
+
+  function startCompass(){
+    if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      // iOS 13+: kullanıcı onayı şart
+      DeviceOrientationEvent.requestPermission().then(function(result){
+        if(result === 'granted'){
+          window.addEventListener('deviceorientation', onOrientation, true);
+        }
+      }).catch(function(){});
+    } else {
+      // Android / eski iOS: doğrudan dinlemeye başla
+      window.addEventListener('deviceorientationabsolute', onOrientation, true);
+      window.addEventListener('deviceorientation', onOrientation, true);
+    }
+  }
+
+  document.getElementById('startBtn').addEventListener('click', function(){
+    permScreen.style.display = 'none';
+    startCompass();
+    startTracking();
+  });
+
+  document.getElementById('manualBtn').addEventListener('click', registerPass);
+
+  document.getElementById('ackBtn').addEventListener('click', function(){
+    count = 0;
+    updateDisplay();
+    clearAlert();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    count = 0;
+    updateDisplay();
+    clearAlert();
+  });
+
+  document.getElementById('plus').addEventListener('click', function(){
+    target = Math.min(target + 1, 20);
+    updateDisplay();
+  });
+  document.getElementById('minus').addEventListener('click', function(){
+    target = Math.max(target - 1, 1);
+    updateDisplay();
+  });
+
+  const soundBtn = document.getElementById('soundBtn');
+  soundBtn.addEventListener('click', function(){
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? '🔊 Ses' : '🔇 Ses';
+  });
+
+  updateDisplay();
+})();
+</script>
+</body>
+</html>
