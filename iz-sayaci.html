@@ -223,14 +223,7 @@
   let watchId = null;
   let soundOn = true;
 
-  // Turn detection state
-  let lastStableHeading = null;
-  let turnInProgress = false;
-  let turnStartTime = 0;
-  const TURN_THRESHOLD = 95;      // derece: yön değişimi bu kadar aşarsa dönüş başladı say
-  const STABLE_THRESHOLD = 35;    // derece: yön tekrar bu aralığa dönerse dönüş bitti say
-  const MIN_TURN_MS = 2500;       // dönüşün en az bu kadar sürmesi gerekiyor (gürültü filtresi)
-  const MIN_SPEED = 0.6;          // m/s, bunun altında yön verisi güvenilmez sayılır
+  const MIN_SPEED = 0.6;          // m/s, GPS yedek modunda bunun altında yön verisi güvenilmez sayılır
   const MIN_TIME_BETWEEN_TURNS = 8000; // iki dönüş arası minimum süre (aynı dönüşü iki kez saymasın)
   let lastTurnDetectedAt = 0;
 
@@ -259,33 +252,46 @@
     renderDots();
   }
 
-  function beep(){
+  let sirenAudioCtx = null;
+  let sirenOsc = null;
+  let sirenInterval = null;
+
+  function startSiren(){
     if(!soundOn) return;
+    if(sirenInterval) return; // zaten çalıyor
     try{
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [0,220,440].forEach((delay)=>{
-        setTimeout(()=>{
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          o.type = 'square';
-          o.frequency.value = 880;
-          g.gain.value = 0.15;
-          o.connect(g); g.connect(ctx.destination);
-          o.start();
-          o.stop(ctx.currentTime + 0.18);
-        }, delay);
-      });
+      if(!sirenAudioCtx) sirenAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      sirenOsc = sirenAudioCtx.createOscillator();
+      const gain = sirenAudioCtx.createGain();
+      sirenOsc.type = 'sawtooth';
+      gain.gain.value = 0.28;
+      sirenOsc.connect(gain); gain.connect(sirenAudioCtx.destination);
+      sirenOsc.frequency.value = 500;
+      sirenOsc.start();
+      let freq = 500, dir = 1;
+      sirenInterval = setInterval(function(){
+        freq += dir * 55;
+        if(freq >= 1150){ freq = 1150; dir = -1; }
+        if(freq <= 500){ freq = 500; dir = 1; }
+        sirenOsc.frequency.setValueAtTime(freq, sirenAudioCtx.currentTime);
+      }, 70);
     }catch(e){}
+  }
+
+  function stopSiren(){
+    if(sirenInterval){ clearInterval(sirenInterval); sirenInterval = null; }
+    if(sirenOsc){ try{ sirenOsc.stop(); }catch(e){} sirenOsc = null; }
   }
 
   function triggerAlert(){
     app.classList.add('alert');
-    beep();
-    if(navigator.vibrate) navigator.vibrate([200,100,200,100,200]);
+    startSiren();
+    if(navigator.vibrate) navigator.vibrate([300,150,300,150,300,150,300]);
   }
 
   function clearAlert(){
     app.classList.remove('alert');
+    stopSiren();
   }
 
   function registerPass(){
@@ -296,10 +302,96 @@
     }
   }
 
+  // ---- Dönüş algılama: pusula açısı belirgin şekilde değişip SONRA durulduğunda geçiş say ----
+  // Dönüş kaç derece olursa olsun (90°, 180°, 200° fark etmez) - önemli olan
+  // yönün belirgin şekilde kayıp sonra yeniden sabitlenmesi.
+  let refHeading = null;        // düz giderken takip edilen "referans" yön
+  let turning = false;
+  let turnStartTime = 0;
+  let maxDeltaDuringTurn = 0;
+  let lastHeadingVal = null;
+  let settleStartTime = null;
+
+  const TURN_START_DEG = 45;    // referans yönden bu kadar sapınca "dönüş başladı" say
+  const MIN_TURN_ANGLE = 80;    // dönüş sırasında en az bu kadar derece dönülmüş olmalı (gerçek U dönüşü)
+  const SETTLE_RATE_DEG = 8;    // ardışık okumalar arası bu kadar küçük değişim = "sakinleşti"
+  const SETTLE_MS = 1200;       // bu kadar süre sakin kalırsa dönüş bitti say
+
+  function handleHeading(heading){
+    const now = Date.now();
+    if(refHeading === null){
+      refHeading = heading;
+      lastHeadingVal = heading;
+      return;
+    }
+
+    const deltaFromRef = angleDiff(heading, refHeading);
+    const deltaFromLast = angleDiff(heading, lastHeadingVal);
+
+    if(!turning){
+      if(deltaFromRef > TURN_START_DEG){
+        turning = true;
+        turnStartTime = now;
+        maxDeltaDuringTurn = deltaFromRef;
+        settleStartTime = null;
+      } else {
+        refHeading = heading; // düz giderken küçük sapmaları referans olarak takip et
+      }
+    } else {
+      maxDeltaDuringTurn = Math.max(maxDeltaDuringTurn, deltaFromRef);
+      if(deltaFromLast < SETTLE_RATE_DEG){
+        if(settleStartTime === null) settleStartTime = now;
+        if(now - settleStartTime > SETTLE_MS){
+          const sinceLastTurn = now - lastTurnDetectedAt;
+          if(maxDeltaDuringTurn > MIN_TURN_ANGLE && sinceLastTurn > MIN_TIME_BETWEEN_TURNS){
+            lastTurnDetectedAt = now;
+            registerPass();
+          }
+          turning = false;
+          refHeading = heading;
+          settleStartTime = null;
+        }
+      } else {
+        settleStartTime = null; // hâlâ dönüyor, sakinleşme sayacını sıfırla
+      }
+    }
+    lastHeadingVal = heading;
+  }
+
+  let compassHeading = null;
+  let compassAvailable = false;
+  let lastCompassProcessTime = 0;
+
+  function onOrientation(evt){
+    let h = null;
+    if(evt.webkitCompassHeading !== undefined && evt.webkitCompassHeading !== null){
+      h = evt.webkitCompassHeading; // iOS Safari - zaten 0-360, kuzeye göre
+    } else if(evt.alpha !== null && evt.absolute){
+      h = 360 - evt.alpha; // Android/standart - alpha ters yönde artar
+    }
+    if(h === null || isNaN(h)) return;
+
+    compassHeading = h;
+    compassAvailable = true;
+    headingText.textContent = Math.round(h) + '° (pusula)';
+    compassIcon.style.transform = 'rotate(' + h + 'deg)';
+
+    // Çok sık gelen olayları hafifçe seyrelt (performans için)
+    const now = Date.now();
+    if(now - lastCompassProcessTime < 150) return;
+    lastCompassProcessTime = now;
+
+    handleHeading(h);
+  }
+
   function onPosition(pos){
     gpsDot.className = 'dot live';
     gpsText.textContent = 'Canlı';
 
+    // Pusula varsa asıl karar onunla veriliyor (handleHeading zaten onOrientation'da çağrılıyor)
+    if(compassAvailable) return;
+
+    // Pusula yoksa GPS heading'e düş (sadece yeterli hızda güvenilir)
     const heading = pos.coords.heading;
     const speed = pos.coords.speed;
 
@@ -308,37 +400,9 @@
       return;
     }
 
-    headingText.textContent = Math.round(heading) + '°';
+    headingText.textContent = Math.round(heading) + '° (GPS)';
     compassIcon.style.transform = 'rotate(' + heading + 'deg)';
-
-    if(lastStableHeading === null){
-      lastStableHeading = heading;
-      return;
-    }
-
-    const diff = angleDiff(heading, lastStableHeading);
-    const now = Date.now();
-
-    if(!turnInProgress){
-      if(diff > TURN_THRESHOLD){
-        turnInProgress = true;
-        turnStartTime = now;
-      } else {
-        // yavaşça takip et (küçük GPS gürültüsünü ignore et)
-        lastStableHeading = heading;
-      }
-    } else {
-      if(diff < STABLE_THRESHOLD){
-        const turnDuration = now - turnStartTime;
-        const sinceLastTurn = now - lastTurnDetectedAt;
-        if(turnDuration > MIN_TURN_MS && sinceLastTurn > MIN_TIME_BETWEEN_TURNS){
-          lastTurnDetectedAt = now;
-          registerPass();
-        }
-        turnInProgress = false;
-        lastStableHeading = heading;
-      }
-    }
+    handleHeading(heading);
   }
 
   function onError(err){
@@ -360,14 +424,32 @@
     });
   }
 
+  function startCompass(){
+    if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      // iOS 13+: kullanıcı onayı şart
+      DeviceOrientationEvent.requestPermission().then(function(result){
+        if(result === 'granted'){
+          window.addEventListener('deviceorientation', onOrientation, true);
+        }
+      }).catch(function(){});
+    } else {
+      // Android / eski iOS: doğrudan dinlemeye başla
+      window.addEventListener('deviceorientationabsolute', onOrientation, true);
+      window.addEventListener('deviceorientation', onOrientation, true);
+    }
+  }
+
   document.getElementById('startBtn').addEventListener('click', function(){
     permScreen.style.display = 'none';
+    startCompass();
     startTracking();
   });
 
   document.getElementById('manualBtn').addEventListener('click', registerPass);
 
   document.getElementById('ackBtn').addEventListener('click', function(){
+    count = 0;
+    updateDisplay();
     clearAlert();
   });
 
