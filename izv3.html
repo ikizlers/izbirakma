@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Tarla İz Sayacı v3.1</title>
+<title>Tarla İz Sayacı v3.4 (Ultra-Stabil)</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Inter:wght@600;800&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -42,7 +42,7 @@
   .track-box.mark-target.active { background: var(--alert); color: #fff; border-style: solid; }
 
   .heading-info { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--text); font-size: 15px; font-weight: 700; background: var(--surface); padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); }
-  .compass { width: 20px; height: 20px; transition: transform .2s ease-out; fill: var(--amber); }
+  .compass { width: 20px; height: 20px; transition: transform .1s ease-out; fill: var(--amber); }
   .debug-info { font-size: 11px; color: var(--text-dim); margin-top: 4px; font-weight: 800; text-align: center; min-height: 14px; }
 
   .controls { padding: 12px 16px max(16px, env(safe-area-inset-bottom)) 16px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); background: var(--surface); }
@@ -80,7 +80,7 @@
 
 <div id="app">
   <div class="topbar">
-    <div class="brand">🌾 İZ SAYACI v3.1</div>
+    <div class="brand">🌾 İZ SAYACI v3.4</div>
     <div class="gps-pill">
       <div class="dot searching" id="gpsDot"></div>
       <span id="gpsText">GPS Bekleniyor</span>
@@ -124,7 +124,7 @@
       <button class="btn btn-primary" id="manualBtn">+1 Sıra / Manuel Dönüş</button>
     </div>
     <div class="row">
-      <button class="btn btn-secondary" id="soundBtn">🔊 Ses Açık</button>
+      <button class="btn btn-secondary" id="soundBtn">🔇 Ses Kapalı</button>
       <button class="btn btn-ghost" id="resetBtn">Sıfırla (1. Sıra)</button>
     </div>
   </div>
@@ -137,26 +137,6 @@
 </div>
 
 <script>
-/*
-  DEĞİŞİKLİK GEÇMİŞİ (v2 -> v2.1 -> v2.2 -> v3.0)
-  ------------------------------------------------
-  v2    : Referans kilitleme + doğrulama (settle) mantığı vardı, eşikler kabaydı, UI sadeydi.
-  v2.1  : UI/görselleştirme büyük ölçüde iyileşti ama doğrulama adımı kaldırılmıştı ve
-          açı ortalamasında 0/360 sınırı (wraparound) hatası vardı -> sahte sayım riski yüksekti.
-  v2.2  : Doğrulama (settle) adımı geri getirildi, açı matematiği düzeltildi, manuel buton
-          otomatik soğuma süresinden bağımsızlaştırıldı, reset tam temizlik yapar hale geldi,
-          GPS/pusula karışması ve park halindeyken sahte sayım riskleri giderildi.
-  v3.0  : v2.1'in arayüzü + v2.2'nin tüm mantık düzeltmeleri birleştirildi. Ek olarak:
-          GPS sinyali kabin içinde kesildiğinde (handleGpsError) lastGpsSpeed artık sıfırlanıyor;
-          önceki sürümlerde bu değer eski/yüksek kalıp sistemin pusulaya geçişini engelleyebilir
-          ve dönüş algılamasını tamamen durdurabilirdi.
-  v3.1  : Çok noktalı (ileri-geri) dönüş manevraları için düzeltme. Geolocation API'nin
-          "heading" alanı aracın burnunun yönünü değil, HAREKET ETTİĞİ yönü verir; geri
-          viteste bu ~180° ters okunabilir. Artık bir dönüş algılanıp onay beklendiği
-          sürece (turning=true) GPS heading tamamen göz ardı edilip sadece pusulaya
-          güveniliyor — pusula ileri/geri hareketten etkilenmez, sadece fiziksel yönü
-          ölçer. Bu, NİHAİ KARARLI sürümdür.
-*/
 (function(){
   const $ = id => document.getElementById(id);
 
@@ -169,47 +149,55 @@
   // ---- Kullanıcı ayarları ----
   let target = 3;
   let currentPass = 1;
-  let soundOn = true;
+  let soundOn = false;
 
-  // ---- Sabitler (dosyanın tek yerinde toplu; sahada ince ayar için buradan değiştirin) ----
-  const MIN_SPEED_KMH    = 2.0;    // Bu hızın altında pusula, üstünde GPS heading kullanılır
-  const U_TURN_ANGLE     = 140;    // Referanstan bu kadar (derece) sapınca "dönüş" adayı say
-  const REF_DRIFT_ZONE   = 30;     // Bu sapmanın altındaysa düz gidiliyor kabul et, referansı hafif güncelle
-  const REF_DRIFT_ALPHA  = 0.1;    // Düz hatta referansın ne hızla güncelleneceği (0-1)
-  const SETTLE_DEG       = 8;      // Ardışık örnekler arası fark bu değerin altına inince "sabitlendi" say
-  const SETTLE_MS        = 800;    // Sabit kalması gereken minimum süre (dönüşü ONAYLAMAK için)
-  const COOLDOWN_MS      = 8000;   // Otomatik algılanan dönüşler arası minimum bekleme (çift sayımı önler)
-  const MOVING_MEMORY_MS = 120000; // Pusula ile onay verebilmek için "yakın zamanda gerçekten hareket" hafızası
+  // ---- Sabitler ----
+  const MIN_SPEED_KMH    = 2.0;
+  const U_TURN_ANGLE     = 140;
+  const REF_DRIFT_ZONE   = 30;
+  const REF_DRIFT_ALPHA  = 0.1;
+  const SETTLE_DEG       = 8;
+  const SETTLE_MS        = 800;
+  const COOLDOWN_MS      = 8000;
+  const MOVING_MEMORY_MS = 120000;
 
   // ---- Dönüş algılama durumu ----
-  let referenceHeading = null;   // Kilitli referans yön (sadece onaylı dönüşte güncellenir)
-  let headingHistory = [];       // Dairesel ortalama için son örnekler
-  let lastSource = null;         // 'GPS' | 'Pusula' — kaynak değişince geçmiş temizlenir
-  let turning = false;           // Eşik aşıldı, onay (sabitlenme) bekleniyor mu
-  let peakDiff = 0;              // Dönüş sırasında görülen en büyük sapma
-  let settleStart = null;        // Sabitlenmenin başladığı zaman damgası
-  let lastStableSample = null;   // Bir önceki örnek (jitter/sabitlenme kontrolü için)
-
-  let lastTurnTime = 0;          // Son ONAYLANMIŞ (otomatik) dönüşün zamanı
-  let lastManualTime = 0;        // Son manuel buton basışının zamanı (çift dokunma koruması)
+  let referenceHeading = null;
+  let headingHistory = [];
+  let lastSource = null;
+  let turning = false;
+  let peakDiff = 0;
+  let settleStart = null;
+  let lastStableSample = null;
+  let lastTurnTime = 0;
+  let lastManualTime = 0;
   let lastGpsSpeed = 0;
-  let lastMovingTimestamp = 0;   // GPS hızının en son eşiği geçtiği an
+  let lastMovingTimestamp = 0;
   let wakeLock = null;
+  let watchId = null; // FIX: WatchPosition ID saklama
+
+  // ---- Throttle ve CPU Koruma Değişkenleri ----
+  let lastOrientProcessTime = 0;
+
+  // ---- Ses durumu ----
+  let audioCtx = null;
+  let osc = null;
+  let alertInterval = null;
 
   // ---- Açı yardımcıları ----
   function angleDiff(a, b) {
     let d = Math.abs(a - b) % 360;
     return d > 180 ? 360 - d : d;
   }
-  // 0/360 sınırını doğru ele alan, en kısa yoldan açısal enterpolasyon.
-  // (v2.1'deki a*0.9+b*0.1 formülü kuzeye yakın yönlerde tamamen yanlış sonuç veriyordu.)
+
   function lerpAngle(a, b, t) {
     let diff = ((b - a + 540) % 360) - 180;
     return (a + diff * t + 360) % 360;
   }
 
-  // Dairesel ortalama ile açı yumuşatma (tekil kaynak içinde gürültü azaltma)
   function getSmoothedHeading(newAngle) {
+    if (typeof newAngle !== 'number' || isNaN(newAngle)) return referenceHeading || 0;
+    
     headingHistory.push(newAngle);
     if (headingHistory.length > 5) headingHistory.shift();
     let sinSum = 0, cosSum = 0;
@@ -218,297 +206,388 @@
       sinSum += Math.sin(rad);
       cosSum += Math.cos(rad);
     }
-    const avgDeg = Math.atan2(sinSum, cosSum) * (180 / Math.PI);
-    return (avgDeg + 360) % 360;
+    let avgDeg = Math.atan2(sinSum, cosSum) * (180 / Math.PI);
+    if (avgDeg < 0) avgDeg += 360; // FIX: atan2 sınır güvenliği
+    return avgDeg;
   }
 
   function render(){
-    countNum.textContent = currentPass;
-    targetNum.textContent = target;
-    nDisplay.textContent = target;
+    try {
+      countNum.textContent = currentPass;
+      targetNum.textContent = target;
+      nDisplay.textContent = target;
 
-    trackVisualizer.innerHTML = '';
-    for (let i = 1; i <= target; i++) {
-      const box = document.createElement('div');
-      const isTarget = (i === target);
-      box.className = 'track-box' +
-                      (i === currentPass ? ' active' : '') +
-                      (isTarget ? ' mark-target' : '');
-      box.textContent = i;
-      trackVisualizer.appendChild(box);
+      trackVisualizer.innerHTML = '';
+      for (let i = 1; i <= target; i++) {
+        const box = document.createElement('div');
+        const isTarget = (i === target);
+        box.className = 'track-box' +
+                        (i === currentPass ? ' active' : '') +
+                        (isTarget ? ' mark-target' : '');
+        box.textContent = i;
+        trackVisualizer.appendChild(box);
+      }
+    } catch (e) {
+      console.error('render() error:', e);
     }
   }
 
-  // ---- Ses / Siren ----
-  let audioCtx = null, osc = null, alertInterval = null;
+  // ---- Ses / Siren (Tam Güvenlikli) ----
   function startSiren(){
     if (!soundOn || alertInterval) return;
     try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
       osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sawtooth';
-      gain.gain.value = 0.3;
+      gain.gain.value = 0.25;
       osc.connect(gain);
       gain.connect(audioCtx.destination);
       osc.start();
+
       let freq = 600, dir = 1;
       alertInterval = setInterval(() => {
-        freq += dir * 80;
-        if (freq >= 1200) dir = -1;
-        if (freq <= 500) dir = 1;
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        try {
+          freq += dir * 80;
+          if (freq >= 1200) dir = -1;
+          if (freq <= 500) dir = 1;
+          if (osc && osc.frequency && audioCtx && audioCtx.state === 'running') {
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          }
+        } catch(e) {
+          stopSiren();
+        }
       }, 60);
-    } catch(e) {}
+    } catch(e) {
+      stopSiren();
+      console.warn('Siren hatası:', e.message);
+    }
   }
+
   function stopSiren(){
-    if (alertInterval) clearInterval(alertInterval);
-    alertInterval = null;
-    if (osc) try { osc.stop(); } catch(e){}
-    osc = null;
-  }
-  function triggerAlert(){
-    app.classList.add('alert');
-    startSiren();
-    if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 600]);
-  }
-  function clearAlert(){
-    app.classList.remove('alert');
-    stopSiren();
-  }
-
-  // ---- Sıra sayacını fiilen artıran fonksiyon (hem otomatik hem manuel bunu çağırır) ----
-  function registerTurn(sourceText){
-    if (currentPass >= target) currentPass = 1; else currentPass++;
-    render();
-    if (navigator.vibrate) navigator.vibrate(250);
-    if (currentPass === target) triggerAlert();
-    debugText.textContent = `DÖNÜŞ TESPİT EDİLDİ (${sourceText}) ➔ Sıra: ${currentPass}`;
-  }
-
-  // Otomatik algılamada dönüş adayının GERÇEKTEN onaylanıp onaylanmayacağına karar verir.
-  function confirmTurnIfValid(source, settledHeading){
-    const now = Date.now();
-
-    if (peakDiff < U_TURN_ANGLE) {
-      // Teorik olarak buraya düşmemeli (turning sadece eşik aşılınca true olur),
-      // ileride eşikler değişirse diye güvenlik amaçlı bırakıldı.
-      referenceHeading = settledHeading;
-       headingHistory = []; // 1. ekle
-      return;
-    }
-
-    if (now - lastTurnTime < COOLDOWN_MS) {
-      debugText.textContent = 'Dönüş algılandı ama soğuma süresinde — sayılmadı';
-      referenceHeading = settledHeading; // yine de referansı güncelle, eski yöne kilitli kalmasın
-       headingHistory = []; // 1. ekle
-      return;
-    }
-
-    // Pusula tabanlı tetiklemede: araç son ~2 dakikadır GERÇEKTEN hareket etmemişse
-    // (ör. telefon elle çevriliyor, kabin sallanıyor, park halinde) sayma.
-    if (source === 'Pusula' && (now - lastMovingTimestamp > MOVING_MEMORY_MS)) {
-      debugText.textContent = 'Dönüş göz ardı edildi (araç yakın zamanda hareket etmemiş görünüyor)';
-      referenceHeading = settledHeading;
-       headingHistory = []; // 1. ekle
-      return;
-    }
-
-    lastTurnTime = now;
-    referenceHeading = settledHeading; // yeni sıradaki yön artık referans
-    headingHistory = []; // 1. ekle
-    registerTurn(source);
-  }
-
-  // ---- Ana yön işleme mantığı (durum makinesi: düz → dönüyor → onay bekleniyor) ----
-  function processHeading(rawHeading, source){
-    if (rawHeading === null || isNaN(rawHeading)) return;
-
-    // GPS ve pusula örnekleri artık aynı ortalama havuzunda karışmıyor.
-    // Kaynak değiştiğinde (sistematik sapma farkı olabileceğinden) geçmiş temizlenir.
-    if (source !== lastSource) { headingHistory = []; lastSource = source; }
-
-    const currentHeading = getSmoothedHeading(rawHeading);
-    compassIcon.style.transform = `rotate(${Math.round(currentHeading)}deg)`;
-    headingText.textContent = `${Math.round(currentHeading)}° (${source})`;
-
-    if (referenceHeading === null) {
-      referenceHeading = currentHeading;
-      turning = false; peakDiff = 0; settleStart = null; lastStableSample = currentHeading;
-      debugText.textContent = `Referans yön alındı: ${Math.round(referenceHeading)}°`;
-      return;
-    }
-
-    const diff = angleDiff(currentHeading, referenceHeading);
-
-    if (!turning) {
-      if (diff >= U_TURN_ANGLE) {
-        turning = true; peakDiff = diff; settleStart = null;
-        debugText.textContent = `Dönüş algılandı (Δ${Math.round(diff)}°) — sabitlenmesi bekleniyor...`;
-      } else if (diff < REF_DRIFT_ZONE) {
-        // Düz hatta pusula/GPS kaymalarına karşı referansı YAVAŞÇA ve wraparound-güvenli güncelle
-        referenceHeading = lerpAngle(referenceHeading, currentHeading, REF_DRIFT_ALPHA);
-        debugText.textContent = `Sırada ilerleniyor | Ref: ${Math.round(referenceHeading)}° | Δ${Math.round(diff)}°`;
-      } else {
-        debugText.textContent = `İzleniyor... Δ${Math.round(diff)}°`;
+    try {
+      if (alertInterval) {
+        clearInterval(alertInterval);
+        alertInterval = null;
       }
-    } else {
-      peakDiff = Math.max(peakDiff, diff);
-      const jitter = angleDiff(currentHeading, lastStableSample);
-      if (jitter < SETTLE_DEG) {
-        if (settleStart === null) settleStart = Date.now();
-        const settled = Date.now() - settleStart;
-        debugText.textContent = `Sabitleniyor ${(settled/1000).toFixed(1)}s/${(SETTLE_MS/1000).toFixed(1)}s | maxΔ${Math.round(peakDiff)}°`;
-        if (settled >= SETTLE_MS) {
-          confirmTurnIfValid(source, currentHeading);
-          turning = false; peakDiff = 0; settleStart = null;
+      if (osc) {
+        osc.stop();
+        osc.disconnect();
+        osc = null;
+      }
+    } catch(e) {
+      osc = null;
+      alertInterval = null;
+    }
+  }
+
+  function triggerAlert(){
+    try {
+      app.classList.add('alert');
+      startSiren();
+      if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 600]);
+    } catch(e) {
+      console.error('triggerAlert error:', e);
+    }
+  }
+
+  function clearAlert(){
+    try {
+      app.classList.remove('alert');
+      stopSiren();
+    } catch(e) {
+      console.error('clearAlert error:', e);
+    }
+  }
+
+  function registerTurn(sourceText){
+    try {
+      if (currentPass >= target) currentPass = 1; else currentPass++;
+      render();
+      if (navigator.vibrate) navigator.vibrate(250);
+      if (currentPass === target) triggerAlert();
+      debugText.textContent = `DÖNÜŞ TESPİT EDİLDİ (${sourceText}) ➔ Sıra: ${currentPass}`;
+    } catch(e) {
+      console.error('registerTurn error:', e);
+    }
+  }
+
+  function confirmTurnIfValid(source, settledHeading){
+    try {
+      const now = Date.now();
+
+      if (peakDiff < U_TURN_ANGLE) {
+        referenceHeading = settledHeading;
+        headingHistory = [];
+        return;
+      }
+
+      if (now - lastTurnTime < COOLDOWN_MS) {
+        debugText.textContent = 'Dönüş algılandı ama soğuma süresinde — sayılmadı';
+        referenceHeading = settledHeading;
+        headingHistory = [];
+        return;
+      }
+
+      if (source === 'Pusula' && (now - lastMovingTimestamp > MOVING_MEMORY_MS)) {
+        debugText.textContent = 'Dönüş göz ardı edildi (araç hareket etmiyor)';
+        referenceHeading = settledHeading;
+        headingHistory = [];
+        return;
+      }
+
+      lastTurnTime = now;
+      referenceHeading = settledHeading;
+      headingHistory = [];
+      registerTurn(source);
+    } catch(e) {
+      console.error('confirmTurnIfValid error:', e);
+    }
+  }
+
+  function processHeading(rawHeading, source){
+    try {
+      if (rawHeading === null || isNaN(rawHeading)) return;
+
+      if (source !== lastSource) { headingHistory = []; lastSource = source; }
+
+      const currentHeading = getSmoothedHeading(rawHeading);
+      compassIcon.style.transform = `rotate(${Math.round(currentHeading)}deg)`;
+      headingText.textContent = `${Math.round(currentHeading)}° (${source})`;
+
+      if (referenceHeading === null) {
+        referenceHeading = currentHeading;
+        turning = false; peakDiff = 0; settleStart = null; lastStableSample = currentHeading;
+        debugText.textContent = `Referans yön alındı: ${Math.round(referenceHeading)}°`;
+        return;
+      }
+
+      const diff = angleDiff(currentHeading, referenceHeading);
+
+      if (!turning) {
+        if (diff >= U_TURN_ANGLE) {
+          turning = true; peakDiff = diff; settleStart = null;
+          debugText.textContent = `Dönüş algılandı (Δ${Math.round(diff)}°) — sabitlenmesi bekleniyor...`;
+        } else if (diff < REF_DRIFT_ZONE) {
+          referenceHeading = lerpAngle(referenceHeading, currentHeading, REF_DRIFT_ALPHA);
+          debugText.textContent = `Sırada ilerleniyor | Ref: ${Math.round(referenceHeading)}° | Δ${Math.round(diff)}°`;
+        } else {
+          debugText.textContent = `İzleniyor... Δ${Math.round(diff)}°`;
         }
       } else {
-        settleStart = null; // hâlâ hareketli, sabitlenme sayacını başa sar
-        debugText.textContent = `Hâlâ dönüyor | Δref ${Math.round(diff)}°`;
+        peakDiff = Math.max(peakDiff, diff);
+        const jitter = angleDiff(currentHeading, lastStableSample);
+        if (jitter < SETTLE_DEG) {
+          if (settleStart === null) settleStart = Date.now();
+          const settled = Date.now() - settleStart;
+          debugText.textContent = `Sabitleniyor ${(settled/1000).toFixed(1)}s/${(SETTLE_MS/1000).toFixed(1)}s | maxΔ${Math.round(peakDiff)}°`;
+          if (settled >= SETTLE_MS) {
+            confirmTurnIfValid(source, currentHeading);
+            turning = false; peakDiff = 0; settleStart = null;
+          }
+        } else {
+          settleStart = null;
+          debugText.textContent = `Hâlâ dönüyor | Δref ${Math.round(diff)}°`;
+        }
       }
-    }
 
-    lastStableSample = currentHeading;
+      lastStableSample = currentHeading;
+    } catch(e) {
+      console.error('processHeading error:', e);
+    }
   }
 
-  // ---- Sensör olayları ----
+  // FIX: Throttle mekanizması eklendi. Pusula max 100ms'de bir işlenecek (Saniyede 10 kez)
   function handleOrientation(e){
-    let h = null;
-    if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;
-    else if (e.alpha != null) h = (360 - e.alpha) % 360;
-    // NOT: Android'de cihaz tam yatay tutulmazsa (alpha) sapabilir; tam doğruluk için
-    // beta/gamma ile tilt-compensation gerekir — bu sürümde uygulanmadı (bilinen sınırlama).
-    //
-    // YENİ (v3.1): Bir dönüş onayı bekleniyorsa (turning=true), hız ne olursa olsun
-    // pusulaya güven. Çok noktalı (ileri-geri) manevralarda GPS "heading" alanı geri
-    // viteste yanıltıcı olabileceğinden (bkz. handlePosition), dönüş süresince tek
-    // güvenilir kaynak pusuladır.
-    if (turning || lastGpsSpeed < MIN_SPEED_KMH) {
-      processHeading(h, 'Pusula');
+    try {
+      const now = Date.now();
+      if (now - lastOrientProcessTime < 100) return; // CPU & Event loop koruması
+      lastOrientProcessTime = now;
+
+      let h = null;
+      if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;
+      else if (e.alpha != null) h = (360 - e.alpha) % 360;
+
+      if (h !== null && !isNaN(h)) {
+        if (turning || lastGpsSpeed < MIN_SPEED_KMH) {
+          processHeading(h, 'Pusula');
+        }
+      }
+    } catch(e) {
+      console.error('handleOrientation error:', e);
     }
   }
 
   function handlePosition(p){
-    gpsDot.className = 'dot live';
-    const speedMs = p.coords.speed || 0;
-    lastGpsSpeed = speedMs * 3.6;
-    gpsText.textContent = `${lastGpsSpeed.toFixed(1)} km/s`;
+    try {
+      gpsDot.className = 'dot live';
+      const speedMs = (p.coords && p.coords.speed != null) ? p.coords.speed : 0;
+      lastGpsSpeed = speedMs * 3.6;
+      gpsText.textContent = `${lastGpsSpeed.toFixed(1)} km/s`;
 
-    if (lastGpsSpeed >= MIN_SPEED_KMH) {
-      lastMovingTimestamp = Date.now(); // "araç gerçekten hareket ediyor" hafızasını tazele
-    }
+      if (lastGpsSpeed >= MIN_SPEED_KMH) {
+        lastMovingTimestamp = Date.now();
+      }
 
-    // YENİ (v3.1): Dönüş onayı bekleniyorsa GPS heading'i HİÇ kullanma.
-    // Geolocation API'nin "heading" alanı aracın burnunun baktığı yönü değil,
-    // ARACIN HAREKET ETTİĞİ yönü (course over ground) verir. Traktör 2-3 noktalı
-    // (ileri-geri) bir manevrayla dönerken geri viteste bu değer aracın gerçek
-    // yönünün ~180° tersini gösterebilir ve sistemi yanıltabilir. Bu yüzden dönüş
-    // algılandığı andan onaylanana kadar sadece pusula (handleOrientation)
-    // kullanılır; GPS örnekleri bu pencerede tamamen göz ardı edilir.
-    if (turning) return;
+      if (turning) return;
 
-    if (lastGpsSpeed >= MIN_SPEED_KMH && p.coords.heading != null && !isNaN(p.coords.heading)) {
-      processHeading(p.coords.heading, 'GPS');
+      if (lastGpsSpeed >= MIN_SPEED_KMH && p.coords.heading != null && !isNaN(p.coords.heading)) {
+        processHeading(p.coords.heading, 'GPS');
+      }
+    } catch(e) {
+      console.error('handlePosition error:', e);
     }
   }
 
-  // YENİ (v3.0): GPS sinyali kesildiğinde lastGpsSpeed artık sıfırlanıyor.
-  // Eskiden bu değer son bilinen (yüksek) hızda donuk kalıyor, bu da sistemi
-  // pusulaya geçmekten alıkoyup dönüş algılamasını tamamen durdurabiliyordu
-  // (ör. kabin çatısının GPS sinyalini kesmesi durumunda).
   function handleGpsError(){
-    gpsDot.className = 'dot off';
-    gpsText.textContent = 'GPS Yok';
-    lastGpsSpeed = 0;
+    try {
+      gpsDot.className = 'dot off';
+      gpsText.textContent = 'GPS Yok';
+      lastGpsSpeed = 0;
+    } catch(e) {
+      console.error('handleGpsError error:', e);
+    }
   }
 
   async function requestWakeLock(){
     try {
-      if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
-    } catch(e) {}
+      if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+        wakeLock = await navigator.wakeLock.request('screen');
+      }
+    } catch(e) { console.warn('Wake Lock başarısız:', e.message); }
   }
 
   function resetDetectionState(){
-    referenceHeading = null;
-    headingHistory = [];
-    lastSource = null;
-    turning = false; peakDiff = 0; settleStart = null; lastStableSample = null;
-    lastTurnTime = 0;       // reset sonrası eski soğuma süresi kalıntısı beklettirmesin
-    lastMovingTimestamp = 0;
+    try {
+      referenceHeading = null;
+      headingHistory = [];
+      lastSource = null;
+      turning = false; peakDiff = 0; settleStart = null; lastStableSample = null;
+      lastTurnTime = 0;
+      lastMovingTimestamp = 0;
+    } catch(e) {
+      console.error('resetDetectionState error:', e);
+    }
   }
 
   async function start(){
-    permScreen.style.display = 'none';
-    resetDetectionState();
+    try {
+      permScreen.style.display = 'none';
+      resetDetectionState();
+      stopSiren();
 
-    await requestWakeLock();
+      await requestWakeLock();
 
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      try {
-        const res = await DeviceOrientationEvent.requestPermission();
-        if (res === 'granted') window.addEventListener('deviceorientation', handleOrientation, true);
-      } catch(e){}
-    } else {
-      window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-      window.addEventListener('deviceorientation', handleOrientation, true);
-    }
+      // FIX: Eski listener'ları temizle (Memory leak ve kilitlenme engelleme)
+      window.removeEventListener('deviceorientation', handleOrientation, true);
+      window.removeEventListener('deviceorientationabsolute', handleOrientation, true);
 
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(handlePosition, handleGpsError, {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000
-      });
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res === 'granted') window.addEventListener('deviceorientation', handleOrientation, true);
+        } catch(e){}
+      } else {
+        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+        window.addEventListener('deviceorientation', handleOrientation, true);
+      }
+
+      // FIX: Eski Watch Position'ı temizle
+      if (navigator.geolocation) {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        
+        watchId = navigator.geolocation.watchPosition(handlePosition, handleGpsError, {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 10000
+        });
+      }
+    } catch(e) {
+      console.error('start() error:', e);
+      permScreen.style.display = 'flex';
     }
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') requestWakeLock();
+    try {
+      if (document.visibilityState === 'hidden') {
+        stopSiren();
+      } else {
+        requestWakeLock();
+      }
+    } catch(e) {
+      console.error('visibilitychange error:', e);
+    }
   });
 
-  $('startBtn').addEventListener('click', start);
+  // Event handler'lar
+  $('startBtn').addEventListener('click', () => {
+    try { start(); } catch(e) { console.error('startBtn click error:', e); }
+  });
 
-  // Manuel buton otomatik algılamanın 8sn'lik soğuma süresine tabi DEĞİL;
-  // sadece çok kısa (400ms) bir çift-dokunma koruması var.
   manualBtn.addEventListener('click', () => {
-    const now = Date.now();
-    if (now - lastManualTime < 400) return;
-    lastManualTime = now;
-    lastTurnTime = now; // otomatik algılayıcının hemen peşinden tekrar tetiklenmesini önle
-    registerTurn('Manuel');
-    manualBtn.classList.remove('flash'); void manualBtn.offsetWidth; manualBtn.classList.add('flash');
-    turning = false; peakDiff = 0; settleStart = null;
+    try {
+      const now = Date.now();
+      if (now - lastManualTime < 400) return;
+      lastManualTime = now;
+      lastTurnTime = now;
+      registerTurn('Manuel');
+      manualBtn.classList.remove('flash'); void manualBtn.offsetWidth; manualBtn.classList.add('flash');
+      turning = false; peakDiff = 0; settleStart = null;
+    } catch(e) {
+      console.error('manualBtn click error:', e);
+    }
   });
 
   $('ackBtn').addEventListener('click', () => {
-    clearAlert();
+    try { clearAlert(); } catch(e) { console.error('ackBtn click error:', e); }
   });
 
   $('resetBtn').addEventListener('click', () => {
-    currentPass = 1;
-    resetDetectionState();
-    clearAlert();
-    render();
-    debugText.textContent = 'Sıfırlandı: 1. Sıradan başlanıyor, mevcut yön yeni referans olacak.';
+    try {
+      currentPass = 1;
+      resetDetectionState();
+      clearAlert();
+      render();
+      debugText.textContent = 'Sıfırlandı: 1. Sıradan başlanıyor, mevcut yön yeni referans olacak.';
+    } catch(e) {
+      console.error('resetBtn click error:', e);
+    }
   });
 
   $('plus').addEventListener('click', () => {
-    target = Math.min(12, target + 1);
-    currentPass = Math.min(currentPass, target);
-    render();
+    try {
+      target = Math.min(12, target + 1);
+      currentPass = Math.min(currentPass, target);
+      render();
+    } catch(e) {
+      console.error('plus click error:', e);
+    }
   });
 
   $('minus').addEventListener('click', () => {
-    target = Math.max(1, target - 1);
-    currentPass = Math.min(currentPass, target);
-    render();
+    try {
+      target = Math.max(1, target - 1);
+      currentPass = Math.min(currentPass, target);
+      render();
+    } catch(e) {
+      console.error('minus click error:', e);
+    }
   });
 
   $('soundBtn').addEventListener('click', function(){
-    soundOn = !soundOn;
-    this.textContent = soundOn ? '🔊 Ses Açık' : '🔇 Ses Kapalı';
-    if (!soundOn) stopSiren();
+    try {
+      soundOn = !soundOn;
+      this.textContent = soundOn ? '🔊 Ses Açık' : '🔇 Ses Kapalı';
+      if (!soundOn) stopSiren();
+    } catch(e) {
+      console.error('soundBtn click error:', e);
+    }
   });
 
   render();
